@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProofFlow Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        .loader { border-top-color: #3b82f6; -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-8 font-sans">
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-8 flex justify-between items-center border-b border-gray-700 pb-4">
+            <h1 class="text-3xl font-bold text-blue-400 flex items-center gap-2">🛡️ ProofFlow</h1>
+            <div class="text-sm text-gray-400 bg-gray-800 px-3 py-1 rounded-full">Sepolia Testnet</div>
+        </header>
+
+        <div id="loading" class="flex flex-col justify-center items-center h-64">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-700 h-12 w-12 mb-4"></div>
+            <p class="text-gray-400">Loading on-chain data...</p>
+        </div>
+
+        <div id="dashboard" class="hidden space-y-6">
+            <!-- Project Summary -->
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-white" id="projectName">Project Name</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                        <div class="text-gray-400 text-sm uppercase tracking-wide">Total Budget</div>
+                        <div class="text-2xl font-bold text-green-400 mt-1"><span id="totalBudget">0</span> pfUSD</div>
+                    </div>
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                        <div class="text-gray-400 text-sm uppercase tracking-wide">Locked in Escrow</div>
+                        <div class="text-2xl font-bold text-yellow-400 mt-1"><span id="locked">0</span> pfUSD</div>
+                    </div>
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                        <div class="text-gray-400 text-sm uppercase tracking-wide">Status</div>
+                        <div class="text-2xl font-bold text-blue-400 mt-1" id="status">ACTIVE</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Milestones -->
+            <div>
+                <h3 class="text-lg font-semibold mb-4 text-gray-300">Milestones</h3>
+                <div id="milestones" class="space-y-4">
+                    <!-- Milestones injected here by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000';
+        const projectId = 0;
+
+        async function loadProject() {
+            try {
+                const res = await axios.get(`${API_URL}/projects/${projectId}`);
+                const data = res.data;
+                
+                document.getElementById('projectName').innerText = data.name;
+                document.getElementById('totalBudget').innerText = data.total_budget;
+                document.getElementById('locked').innerText = data.locked_in_escrow;
+                document.getElementById('status').innerText = data.status;
+
+                const milestonesContainer = document.getElementById('milestones');
+                milestonesContainer.innerHTML = '';
+
+                data.milestones.forEach((m) => {
+                    const div = document.createElement('div');
+                    div.className = 'bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-md transition hover:border-blue-500/50';
+                    div.innerHTML = `
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                            <div>
+                                <h4 class="font-bold text-lg text-white">Milestone ${m.index + 1}: ${m.description}</h4>
+                                <p class="text-sm text-gray-400 mt-1">Amount: <span class="text-green-400 font-semibold">${m.amount} pfUSD</span> | Status: <span class="text-blue-300 font-semibold">${m.status}</span></p>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-xs text-gray-500 uppercase">Deadline</div>
+                                <div class="text-sm text-gray-300">${new Date(m.deadline * 1000).toLocaleDateString()}</div>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-3 mt-4 pt-4 border-t border-gray-700">
+                            <button onclick="submitEvidence(${m.index})" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                📄 Submit Evidence
+                            </button>
+                            <button onclick="verifyMilestone(${m.index})" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                🤖 Run AI Verify
+                            </button>
+                            <button onclick="settleMilestone(${m.index})" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                💸 Settle
+                            </button>
+                        </div>
+                        <div id="log-${m.index}" class="mt-4 text-xs text-gray-300 font-mono bg-gray-900/80 p-3 rounded-lg border border-gray-700 hidden"></div>
+                    `;
+                    milestonesContainer.appendChild(div);
+                });
+
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+            } catch (err) {
+                console.error(err);
+                document.getElementById('loading').innerHTML = '<p class="text-red-400">Failed to load project. Is the backend running?</p>';
+            }
+        }
+
+        async function submitEvidence(mid) {
+            const log = document.getElementById(`log-${mid}`);
+            log.classList.remove('hidden');
+            log.innerText = '⏳ Submitting evidence hash to blockchain...';
+            try {
+                const payload = {
+                    repo: "proofflow/demo-repo",
+                    commit: "a1b2c3d4e5f6",
+                    files: ["src/main.py", "README.md"],
+                    deployment_url: "https://demo.proofflow.com"
+                };
+                const res = await axios.post(`${API_URL}/projects/${projectId}/milestones/${mid}/evidence`, payload);
+                log.innerText = `✅ Evidence Submitted!\nHash: ${res.data.evidence_hash}`;
+                setTimeout(loadProject, 2000);
+            } catch (err) {
+                log.innerText = `❌ Error: ${err.response?.data?.detail || err.message}`;
+            }
+        }
+
+        async function verifyMilestone(mid) {
+            const log = document.getElementById(`log-${mid}`);
+            log.classList.remove('hidden');
+            log.innerText = '🤖 Running AI Verification & Policy Engine... (This may take a moment)';
+            try {
+                const res = await axios.post(`${API_URL}/projects/${projectId}/milestones/${mid}/verify`);
+                const decision = res.data.final_decision;
+                const score = res.data.ai_analysis.completion_score;
+                log.innerText = `✅ Verification Complete!\nDecision: ${decision} | Completion Score: ${score}%\nTx Hash: ${res.data.tx}`;
+                setTimeout(loadProject, 2000);
+            } catch (err) {
+                log.innerText = `❌ Error: ${err.response?.data?.detail || err.message}`;
+            }
+        }
+
+        async function settleMilestone(mid) {
+            const log = document.getElementById(`log-${mid}`);
+            log.classList.remove('hidden');
+            log.innerText = '💸 Settling milestone on-chain...';
+            try {
+                const res = await axios.post(`${API_URL}/projects/${projectId}/milestones/${mid}/settle`);
+                log.innerText = `✅ Settled Successfully!\nReleased: ${res.data.released} pfUSD\nTx Hash: ${res.data.tx}`;
+                setTimeout(loadProject, 3000);
+            } catch (err) {
+                log.innerText = `❌ Error: ${err.response?.data?.detail || err.message}`;
+            }
+        }
+
+        // Load data on startup
+        loadProject();
+    </script>
+</body>
+</html>

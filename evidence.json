@@ -1,0 +1,6 @@
+{
+  "repo": "torvalds/linux",
+  "commit": "1da177e4c3f41524e886b7f1b8a0c1fc7321cac2",
+  "files": ["Makefile", "README"],
+  "deployment_url": "https://kernel.org"
+}

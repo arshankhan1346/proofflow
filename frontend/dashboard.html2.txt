@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ProofFlow Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<style>
+  .loader{border-top-color:#3b82f6;animation:spin 1.5s linear infinite}
+  @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+  button:disabled{opacity:.35;cursor:not-allowed;filter:grayscale(1)}
+</style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-8 font-sans">
+<div class="max-w-4xl mx-auto">
+
+  <header class="mb-8 flex justify-between items-center border-b border-gray-700 pb-4">
+    <h1 class="text-3xl font-bold text-blue-400 flex items-center gap-2">🛡️ ProofFlow</h1>
+    <div class="text-sm text-gray-400 bg-gray-800 px-3 py-1 rounded-full">Sepolia Testnet</div>
+  </header>
+
+  <div id="loading" class="flex flex-col justify-center items-center h-64">
+    <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-700 h-12 w-12 mb-4"></div>
+    <p class="text-gray-400">Loading on-chain data...</p>
+  </div>
+
+  <div id="dashboard" class="hidden space-y-6">
+
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg">
+      <h2 class="text-xl font-semibold mb-4 text-white" id="projectName">—</h2>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+        <div class="bg-gray-700/50 p-4 rounded-lg">
+          <div class="text-gray-400 text-xs uppercase tracking-wide">Total Budget</div>
+          <div class="text-2xl font-bold text-green-400 mt-1"><span id="totalBudget">0</span> pfUSD</div>
+        </div>
+        <div class="bg-gray-700/50 p-4 rounded-lg">
+          <div class="text-gray-400 text-xs uppercase tracking-wide">Locked in Escrow</div>
+          <div class="text-2xl font-bold text-yellow-400 mt-1"><span id="locked">0</span> pfUSD</div>
+        </div>
+        <div class="bg-gray-700/50 p-4 rounded-lg">
+          <div class="text-gray-400 text-xs uppercase tracking-wide">Released</div>
+          <div class="text-2xl font-bold text-emerald-400 mt-1"><span id="released">0</span> pfUSD</div>
+        </div>
+        <div class="bg-gray-700/50 p-4 rounded-lg">
+          <div class="text-gray-400 text-xs uppercase tracking-wide">Status</div>
+          <div class="text-2xl font-bold text-blue-400 mt-1" id="status">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="text-lg font-semibold mb-2 text-gray-300">Milestones</h3>
+      <p class="text-xs text-gray-500 mb-4">
+        Flow per milestone: <span class="text-blue-300">Submit Evidence</span> →
+        <span class="text-purple-300">Run AI Verify</span> →
+        <span class="text-green-300">Settle</span>.
+        Greyed-out buttons mean that step is already done or not yet allowed by the contract.
+      </p>
+      <div id="milestones" class="space-y-4"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_URL = 'http://localhost:8000';
+const projectId = 0;
+
+// REAL evidence so the AI's GitHub checks actually pass.
+const EVIDENCE_PAYLOAD = {
+  repo: "torvalds/linux",
+  commit: "1da177e4c3f41524e886b7f1b8a0c1fc7321cac2",
+  files: ["Makefile", "README"],
+  deployment_url: "https://kernel.org"
+};
+
+const TERMINAL = ["RELEASED","COMPLETED","PAID","CLOSED"];
+
+function statusColor(s){
+  s = (s||"").toUpperCase();
+  if (TERMINAL.includes(s)) return "text-emerald-400";
+  if (s === "VERIFIED")  return "text-cyan-300";
+  if (s === "SUBMITTED") return "text-purple-300";
+  if (s === "FUNDED")    return "text-blue-300";
+  return "text-gray-300";
+}
+
+// Which actions are allowed given the on-chain status?
+function allowed(status){
+  const s = (status||"").toUpperCase();
+  return {
+    submit: s === "FUNDED",
+    verify: s === "SUBMITTED",
+    settle: s === "VERIFIED",
+    done:   TERMINAL.includes(s)
+  };
+}
+
+async function loadProject(){
+  try{
+    const res = await axios.get(`${API_URL}/projects/${projectId}`);
+    const d = res.data;
+    document.getElementById('projectName').innerText = d.name;
+    document.getElementById('totalBudget').innerText = d.total_budget;
+    document.getElementById('locked').innerText = d.locked_in_escrow;
+    document.getElementById('released').innerText = d.total_released;
+    document.getElementById('status').innerText = d.status;
+
+    const box = document.getElementById('milestones');
+    box.innerHTML = '';
+
+    d.milestones.forEach(m=>{
+      const a = allowed(m.status);
+      const div = document.createElement('div');
+      div.className = 'bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-md transition hover:border-blue-500/40';
+      div.innerHTML = `
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+          <div>
+            <h4 class="font-bold text-lg text-white">Milestone ${m.index+1}: ${m.description}</h4>
+            <p class="text-sm text-gray-400 mt-1">
+              Amount: <span class="text-green-400 font-semibold">${m.amount} pfUSD</span>
+              · Status: <span class="${statusColor(m.status)} font-semibold">${m.status}</span>
+              ${a.done ? '· <span class="text-emerald-400">✅ Paid on-chain</span>' : ''}
+            </p>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-[10px] text-gray-500 uppercase">Deadline</div>
+            <div class="text-sm text-gray-300">${new Date(m.deadline*1000).toLocaleDateString()}</div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-3 pt-4 border-t border-gray-700">
+          <button id="sub-${m.index}" ${a.submit?'':'disabled'}
+            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            📄 Submit Evidence
+          </button>
+          <button id="ver-${m.index}" ${a.verify?'':'disabled'}
+            class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            🤖 Run AI Verify
+          </button>
+          <button id="set-${m.index}" ${a.settle?'':'disabled'}
+            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            💸 Settle
+          </button>
+        </div>
+        <div id="log-${m.index}" class="mt-4 text-xs text-gray-300 font-mono bg-gray-900/80 p-3 rounded-lg border border-gray-700 hidden whitespace-pre-wrap"></div>
+      `;
+      box.appendChild(div);
+
+      document.getElementById(`sub-${m.index}`).onclick = ()=> submitEvidence(m.index);
+      document.getElementById(`ver-${m.index}`).onclick = ()=> verifyMilestone(m.index);
+      document.getElementById(`set-${m.index}`).onclick = ()=> settleMilestone(m.index);
+    });
+
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+  }catch(err){
+    console.error(err);
+    document.getElementById('loading').innerHTML =
+      '<p class="text-red-400">Failed to load project. Is the backend running on :8000?</p>';
+  }
+}
+
+function log(i,msg){ const l=document.getElementById(`log-${i}`); l.classList.remove('hidden'); l.innerText=msg; }
+
+async function submitEvidence(i){
+  log(i,'⏳ Signing + sending evidence hash to Sepolia...');
+  try{
+    const r = await axios.post(`${API_URL}/projects/${projectId}/milestones/${i}/evidence`, EVIDENCE_PAYLOAD);
+    log(i,`✅ Evidence recorded on-chain\nHash: ${r.data.evidence_hash}\nTx: ${r.data.tx}`);
+    setTimeout(loadProject, 2500);
+  }catch(e){ log(i,`❌ ${e.response?.data?.detail||e.message}`); }
+}
+
+async function verifyMilestone(i){
+  log(i,'🤖 AI checking GitHub repo, commit, files + deployment URL...');
+  try{
+    const r = await axios.post(`${API_URL}/projects/${projectId}/milestones/${i}/verify`);
+    const p = r.data.policy_result||{};
+    log(i,
+`✅ Verification done
+Decision : ${r.data.final_decision}
+Score    : ${r.data.ai_analysis?.completion_score ?? '?'}%
+Deterministic pass rate: ${p.deterministic_pass_rate ?? '?'}
+Tx: ${r.data.tx}`);
+    setTimeout(loadProject, 2500);
+  }catch(e){ log(i,`❌ ${e.response?.data?.detail||e.message}`); }
+}
+
+async function settleMilestone(i){
+  log(i,'💸 Contract releasing pfUSD to worker...');
+  try{
+    const r = await axios.post(`${API_URL}/projects/${projectId}/milestones/${i}/settle`);
+    log(i,`✅ SETTLED on-chain
+Released: ${r.data.released} pfUSD
+Tx: ${r.data.tx}`);
+    setTimeout(loadProject, 3000);
+  }catch(e){ log(i,`❌ ${e.response?.data?.detail||e.message}`); }
+}
+
+loadProject();
+</script>
+</body>
+</html>
