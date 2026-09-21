@@ -5,7 +5,9 @@
 </p>
 
 <h1 align="center">🛡️ ProofFlow: AI-Verified Blockchain Escrow</h1>
-
+   <p align="center">
+     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" />
+   </p>
 <p align="center">
   <b>The world's first trustless escrow protocol that uses AI to verify real-world deliverables before releasing smart contract payments.</b>
 </p>
